@@ -1,0 +1,2 @@
+07-08-2023	09:17:16 GMT+7	87f26301-17db-4c55-abb8-7db56a88a187	MongoParseError: option usecreateindex is not supported
+07-08-2023	13:37:07 GMT+7	ef24a3e8-a98a-40a2-957d-7b6c502ff432	POST	localhost	/api/item/tag	SyntaxError: Bad control character in string literal in JSON at position 22
