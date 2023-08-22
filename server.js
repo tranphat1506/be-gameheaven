@@ -1,14 +1,13 @@
 const env = require('dotenv');
 env.config();
 const PORT = process.env.PORT || 3001;
-const HOST = process.env.URL || 'http://locahost';
+const HOST = process.env.BE_URL || 'http://locahost';
 const STATUS_TIME = new Date(Date.now() + 7 * 60 * 60 * 1000).toUTCString();
 global._STATUS_TIME = STATUS_TIME;
 const express = require('express');
 const app = express();
 const http = require('http');
 const server = http.createServer(app);
-
 //MIDDLEWARES
 const bodyParser = require('body-parser');
 app.use(bodyParser.urlencoded({ extended: false }));

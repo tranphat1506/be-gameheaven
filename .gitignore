@@ -2,3 +2,5 @@
 .env_dev
 .end_prod
 node_modules/
+.prettierrc
+logs/

@@ -1,5 +1,6 @@
-const { ItemModel } = require('../models/item.model');
+const { strRemoveUnicode, stringToSlug } = require('../utils/string.utils');
 const { urlAlphabet, customAlphabet } = require('nanoid');
+const { ItemModel } = require('../models/item.model');
 const genUuid = customAlphabet(urlAlphabet, 15);
 
 const findItemById = (id) => {
@@ -17,32 +18,13 @@ const findItemById = (id) => {
 const findItemByTag = async (tagsArray) => {
     const tagsArrayRegex = tagsArray.map((tag) => new RegExp(tag, 'miu'));
     return new Promise((resolve, reject) => {
-        //{ tags: { $in: tagsArrayRegex } }
-        ItemModel.distinct('itemName', {
-            tags: { $in: tagsArrayRegex },
-            itemName: { $in: tagsArrayRegex },
-            nameHistory: { $in: tagsArrayRegex },
-            'typeOfItem.display': { $in: tagsArrayRegex },
+        ItemModel.find({
+            $or: [
+                { tags: { $in: tagsArrayRegex } },
+                { itemName: tagsArrayRegex },
+            ],
         })
-            .then((items) => {
-                return resolve({ found: items.length, items });
-            })
-            .catch((err) => {
-                return reject(err);
-            });
-    });
-};
-
-const findItemByDeepSearching = async (tagsArray) => {
-    const tagsArrayRegex = new RegExp(tagsArray.join('|'), 'mui');
-    console.log(tagsArrayRegex);
-    return new Promise((resolve, reject) => {
-        ItemModel.find(
-            // prettier-ignore
-            { $text: { $search: /s/ } },
-            { score: { $meta: 'textScore' } },
-        )
-            .sort({ score: { $meta: 'textScore' } })
+            .sort({ 'prices.isDiscount': -1, 'prices.salePrice': 1 })
             .then((items) => {
                 return resolve({ found: items.length, items });
             })
@@ -102,10 +84,28 @@ const detailStore = () => {
             });
     });
 };
+// const findItemByDeepSearching = async (searchQuery) => {
+//     //const tagsArrayRegex = new RegExp(tagsArray.join('|'), 'mui');
+//     //console.log(tagsArrayRegex);
+//     return new Promise((resolve, reject) => {
+//         ItemModel.find(
+//             // prettier-ignore
+//             { $text: { $search: searchQuery } },
+//             { score: { $meta: 'textScore' } },
+//         )
+//             .sort({ score: { $meta: 'textScore' } })
+//             .then((items) => {
+//                 return resolve({ found: items.length, items });
+//             })
+//             .catch((err) => {
+//                 return reject(err);
+//             });
+//     });
+// };
 module.exports = {
     createItem,
     detailStore,
     findItemById,
     findItemByTag,
-    findItemByDeepSearching,
+    //findItemByDeepSearching,
 };

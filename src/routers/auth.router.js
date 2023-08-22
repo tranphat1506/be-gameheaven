@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/auth.controller');
 
-router.get('/',(req,res)=>{
+router.get('/', (req, res) => {
     return res.sendStatus(200);
 });
 
@@ -14,8 +14,8 @@ router.post('/signup', authController.signUp);
 
 router.post('/signin', authController.signIn);
 
-router.post('/verify-email', authController.emailVerify);
+router.post('/verify', authController.verify);
 
-router.post('/logout',authController.signOut);
+router.post('/logout', authController.signOut);
 
 module.exports = router;

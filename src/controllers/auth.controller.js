@@ -1,9 +1,12 @@
+const GlobalSetting = require('../configs/globalSetting.config');
 const jwtHelper = require('../helpers/jwt.helper');
 const _ = require('underscore');
 const { UserModel } = require('../models/users.model');
-const signupValidation = require('../helpers/signup.validation');
+const joiValidation = require('../helpers/joi.helper');
+const { sendVerifyEmail } = require('../services/mail.service');
 const { v4: uuidv4 } = require('uuid');
 const { logEvents } = require('../middlewares/logEvents');
+const md5 = require('md5');
 
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET;
 const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET;
@@ -11,7 +14,6 @@ const ACCESS_TOKEN_LIFE = process.env.ACCESS_TOKEN_LIFE;
 const REFRESH_TOKEN_LIFE = process.env.REFRESH_TOKEN_LIFE;
 const bcrypt = require('bcrypt');
 const saltRounds = 8;
-const { roleDisplay } = require('../helpers/roledisplay.helpers');
 const signIn = async (req, res) => {
     const { user_name, password, remember_pwd } = req.body;
     try {
@@ -23,8 +25,8 @@ const signIn = async (req, res) => {
                 message: 'Tài khoản hoặc mật khẩu không hợp lệ!',
             });
         if (
-            !userWasFound.account_details.email.isVerify &&
-            !userWasFound.account_details.phone.isVerify
+            !userWasFound.account_details.email.is_verify &&
+            !userWasFound.account_details.phone.is_verify
         )
             return res.status(400).json({
                 message: 'Tài khoản này vẫn chưa xác thực!',
@@ -75,7 +77,9 @@ const signIn = async (req, res) => {
                 secure: true,
                 path: '/',
             });
-            return res.sendStatus(200);
+            return res.status(200).json({
+                code: 200,
+            });
         });
         // Catch error
     } catch (error) {
@@ -87,185 +91,46 @@ const signIn = async (req, res) => {
         });
     }
 };
-const nodeMailer = require('../helpers/nodemailer.helpers.js');
-const template = require('../helpers/email.template');
-const verifyMethodList = {
-    email: true,
-    phone: false,
-};
-const typeTrans = {
-    fname: 0,
-    lname: 1,
-    dBirth: 2,
-    mBith: 3,
-    yBirth: 4,
-    role: 5,
-    sex: 6,
-    user_name: 7,
-    password: 8,
-    re_password: 9,
-    phone: 10,
-    email: 11,
-    method: 12,
-};
 const signUp = async (req, res) => {
-    const {
-        fname,
-        lname,
-        phone,
-        email,
-        user_name,
-        password,
-        re_password,
-        method,
-        dBirth,
-        mBirth,
-        yBirth,
-        role,
-        sex,
-    } = req.body;
-    // Date of birth
-    if (!dBirth) {
-        return res.status(400).json({
-            message: 'Vui lòng không bỏ trống ngày sinh!',
-            type: typeTrans['dBirth'],
-        });
-    }
-    if (!mBirth) {
-        return res.status(400).json({
-            message: 'Vui lòng không bỏ trống tháng sinh!',
-            type: typeTrans['mBirth'],
-        });
-    }
-    if (!yBirth) {
-        return res.status(400).json({
-            message: 'Vui lòng không bỏ trống năm sinh!',
-            type: typeTrans['yBirth'],
-        });
-    }
-    const isLeap = (yBirth % 4 == 0 && yBirth % 100 != 0) || yBirth % 400 == 0;
-    if (mBirth == 2 && dBirth > 28) {
-        if (!isLeap || dBirth > 29 || dBirth < 1) {
-            return res.status(400).json({
-                message: `Ngày ${dBirth} không có trong tháng ${mBirth}. Vui lòng kiểm tra lại!`,
-                type: typeTrans['dBirth'],
-            });
-        }
-    }
-    switch (mBirth) {
-        case 4:
-        case 6:
-        case 9:
-        case 11:
-            if (dBirth > 30 || dBirth < 1) {
-                return res.status(400).json({
-                    message: `Ngày ${dBirth} không có trong tháng ${mBirth}. Vui lòng kiểm tra lại!`,
-                    type: typeTrans['dBirth'],
-                });
-            }
-        default:
-            if (dBirth > 31 || dBirth < 1) {
-                return res.status(400).json({
-                    message: `Ngày ${dBirth} không có trong tháng ${mBirth}. Vui lòng kiểm tra lại!`,
-                    type: typeTrans['dBirth'],
-                });
-            }
-    }
+    const { email, user_name, password, re_password } = req.body;
     //
-    const errorValidation = signupValidation({
-        fname,
-        lname,
-        birth: new Date(yBirth + '-' + mBirth + '-' + dBirth).toISOString(),
-        role,
-        sex,
-        user_name,
-        password,
-        re_password,
-        phone,
-        email,
-        method,
-    });
+    const errorValidation = joiValidation.signUp(req.body);
     if (errorValidation) {
         return res.status(400).json({
             message: errorValidation.message,
-            type: typeTrans[errorValidation.details[0].context.key],
-        });
-    }
-    const role_display = roleDisplay(role);
-    if (!role_display) {
-        return res.status(400).json({
-            message: `Vai trò "${role}" không được hỗ trợ!`,
-            type: typeTrans['role'],
-        });
-    }
-    // Method
-    if (!verifyMethodList[method]) {
-        return res.status(400).json({
-            message: `Phương thức xác thực bằng ${method} chưa có!`,
-            type: typeTrans['method'],
+            type: errorValidation.details[0].context.key,
         });
     }
     try {
         const hashPassword = await bcrypt.hash(password, saltRounds);
         const userInDB = await UserModel.findOne({
-            'account_details.user_name': user_name,
+            $or: [
+                { 'account_details.user_name': user_name },
+                {
+                    'account_details.email.details': email,
+                    'account_details.email.is_verify': true,
+                },
+            ],
         });
         if (_.isNull(userInDB)) {
-            // send verify code to device
-            const code = await uuidv4();
-            const html = template.sendVerifyCode(
-                process.env.FE_URL + '/home',
-                `${process.env.FE_URL}/auth?method=verify&token=${code}`,
-                user_name,
-            );
-            if (method == 'email') {
-                await nodeMailer.sendMail(
-                    'gmail',
-                    req.body[method],
-                    'Xác Thực Tài Khoản Mới',
-                    html,
-                );
-            }
+            const id = uuidv4();
+            // send verify email link to device
+            const hashVerifyLink =
+                `${process.env.BE_URL}:${process.env.PORT}` +
+                '/api/auth/verify/?method=email&h=' +
+                md5(user_name + id);
+            // send
+            if (process.env.NODE_ENV === 'development')
+                console.log(hashVerifyLink);
+            else await sendVerifyEmail(hashVerifyLink, user_name, email);
             // save user info to data
-            const id = await uuidv4();
             const newUser = new UserModel({
-                id,
+                _id: id,
                 account_details: {
                     user_name,
                     password: hashPassword,
                     email: {
                         details: email,
-                    },
-                    phone: {
-                        details: phone,
-                    },
-                    role: {
-                        display: role_display,
-                    },
-                },
-                info_details: {
-                    fullname: {
-                        first_name: fname,
-                        last_name: lname,
-                    },
-                    birth: {
-                        day: dBirth,
-                        month: mBirth,
-                        year: yBirth,
-                    },
-                    sex: {
-                        display: !sex
-                            ? 'Nữ'
-                            : sex > 1
-                            ? 'Chưa cập nhật'
-                            : 'Nam',
-                        info: sex,
-                    },
-                },
-                temp_data: {
-                    email_verification_code: {
-                        expired_at: new Date().getTime() + 86400000, // 24 hours after created account
-                        token: code,
                     },
                 },
             });
@@ -278,7 +143,6 @@ const signUp = async (req, res) => {
         // if already have account
         return res.status(400).json({
             message: 'Người dùng đã tồn tại!',
-            type: typeTrans['user_name'],
         });
 
         // Catch error
@@ -286,8 +150,8 @@ const signUp = async (req, res) => {
         process.env.NODE_ENV != 'development'
             ? logEvents(`${error.name}: ${error.message}`, `errors`)
             : console.log(`${error.name}: ${error.message}`);
-        return res.status(503).json({
-            code: 503,
+        return res.status(500).json({
+            code: 500,
             message: 'Hệ thống đang bận!',
         });
     }
@@ -295,10 +159,6 @@ const signUp = async (req, res) => {
 
 const signOut = (req, res) => {
     console.log(req.cookies.a_token);
-    res.clearCookie('test', {
-        domain: 'apiuwuservice.onrender.com',
-        path: '/',
-    });
     res.clearCookie('a_token');
     return res.sendStatus(200);
 };
@@ -342,15 +202,16 @@ const refreshAccessToken = async (req, res) => {
         process.env.NODE_ENV != 'development'
             ? logEvents(`${error.name}: ${error.message}`, `errors`)
             : console.log(`${error.name}: ${error.message}`);
-        return res.status(401).json({
-            code: 401,
+        return res.status(500).json({
+            code: 500,
             message: 'Hệ thống đang bận!',
         });
     }
 };
-const emailVerify = async (req, res) => {
-    const token = req.body && req.body.token;
-    if (!token) {
+const verify = async (req, res) => {
+    const hashCode = req.query.h || false;
+    const method = req.query.method || false;
+    if (!hashCode || !GlobalSetting.verify_methods_support[method]) {
         return res.status(400).json({
             code: 400,
             message: 'Bad Request.',
@@ -358,7 +219,7 @@ const emailVerify = async (req, res) => {
     }
     try {
         const userInDB = await UserModel.findOne({
-            'temp_data.email_verification_code.token': token,
+            'account_details.email.verify_code': hashCode,
         });
         if (!userInDB) {
             return res.status(403).json({
@@ -366,31 +227,21 @@ const emailVerify = async (req, res) => {
                 message: 'The verification link has expired!',
             });
         }
-        const email = userInDB.account_details.email.details;
-        // if user already verify email || token not the same
-        const isExpired =
-            new Date().getTime() -
-                Number(userInDB.temp_data.email_verification_code.expired_at) >
-            0;
-        if (userInDB.account_details.email.isVerify || isExpired) {
-            return res.status(403).json({
-                code: 403,
-                message: 'The verification link has expired!',
-            });
-        }
-        userInDB.account_details.email.isVerify = true;
+        // clear code
+        userInDB.account_details.email.verify_code = false;
+        // change status
+        userInDB.account_details.email.is_verify = true;
         await userInDB.save();
         return res.status(200).json({
             code: 200,
-            message: 'OK!',
-            user_email: email,
+            message: 'Verify email success.',
         });
     } catch (error) {
         process.env.NODE_ENV != 'development'
             ? logEvents(`${error.name}: ${error.message}`, `errors`)
             : console.log(`${error.name}: ${error.message}`);
-        return res.status(503).json({
-            code: 503,
+        return res.status(500).json({
+            code: 500,
             message: 'Hệ thống đang bận!',
         });
     }
@@ -440,7 +291,7 @@ module.exports = {
     signIn,
     signUp,
     signOut,
-    emailVerify,
+    verify,
     refreshAccessToken,
     authCheck,
 };

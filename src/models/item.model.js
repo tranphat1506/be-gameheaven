@@ -3,7 +3,7 @@ const ItemSchema = new DB.Schema({
     _id: String,
     public: { type: Boolean, default: false },
     typeOfItem: {
-        id: Number,
+        id: { type: Number, default: 0 },
         display: { type: String, default: 'Sản phẩm chưa được cập nhật' },
     },
     quantity: { type: Number, default: 0 }, // quantity left
@@ -25,15 +25,15 @@ const ItemSchema = new DB.Schema({
     nameHistory: [],
     tags: [],
 });
-ItemSchema.index(
-    {
-        itemName: 'text',
-        nameHistory: 'text',
-        tags: 'text',
-        'typeOfItem.display': 'text',
-    },
-    { sparse: true },
-);
+// ItemSchema.index(
+//     {
+//         itemName: 'text',
+//         nameHistory: 'text',
+//         tags: 'text',
+//         'typeOfItem.display': 'text',
+//     },
+//     { sparse: true },
+// );
 const ItemModel = DB.model('items', ItemSchema);
 module.exports = {
     ItemModel,
